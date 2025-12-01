@@ -1,0 +1,120 @@
+import SwiftUI
+import UIKit
+import simd
+import Metal
+import MetalKit
+
+struct Uniforms {
+    var resolution: SIMD2<Float>
+    var time: Float
+    var blurScale: Float
+    var boxSize: SIMD2<Float>
+    var cornerRadius: Float
+}
+
+struct LiquidGlassShaderView: UIViewRepresentable {
+    let cornerRadius: CGFloat
+    let blurScale: CGFloat
+    let updateMode: SnapshotUpdateMode
+    
+    func makeUIView(context: Context) -> MTKView {
+        let view = MTKView()
+        view.device = MTLCreateSystemDefaultDevice()
+        view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        view.isOpaque = false
+        view.layer.isOpaque = false
+        view.backgroundColor = .clear
+        view.enableSetNeedsDisplay = true
+        view.delegate = context.coordinator
+        
+        return view
+    }
+
+    func updateUIView(_ uiView: MTKView, context: Context) {
+        context.coordinator.mtkView = uiView
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(cornerRadius: cornerRadius, updateMode: updateMode, blurScale: blurScale)
+    }
+
+    class Coordinator: NSObject, MTKViewDelegate {
+        weak var mtkView: MTKView?
+        
+        var pipelineState: MTLRenderPipelineState!
+        var commandQueue: MTLCommandQueue!
+        var device: MTLDevice!
+        var startTime: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
+        var texture: LiquidGlassTexture!
+
+        let cornerRadius: CGFloat
+        let updateMode: SnapshotUpdateMode
+        let blurScale: CGFloat
+    
+        @MainActor
+        init(cornerRadius: CGFloat, updateMode: SnapshotUpdateMode, blurScale: CGFloat) {
+            self.cornerRadius = cornerRadius
+            self.updateMode = updateMode
+            self.blurScale = blurScale
+            super.init()
+
+            device = MTLCreateSystemDefaultDevice()
+            commandQueue = device.makeCommandQueue()
+
+            let library = try! device.makeDefaultLibrary(bundle: Bundle.main)
+
+            let pipelineDescriptor = MTLRenderPipelineDescriptor()
+            pipelineDescriptor.vertexFunction = library.makeFunction(name: "vertexPassthrough")
+            pipelineDescriptor.fragmentFunction = library.makeFunction(name: "liquidGlassFragment")
+            pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+
+            pipelineState = try! device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+
+            texture = LiquidGlassTexture(device: device)
+            texture.updateMode = updateMode
+            
+            texture.didUpdateTexture = { [weak self] in
+                DispatchQueue.main.async { self?.mtkView?.setNeedsDisplay() }
+            }
+        }
+
+        func draw(in view: MTKView) {
+            guard let drawable = view.currentDrawable,
+                  let descriptor = view.currentRenderPassDescriptor else { return }
+            
+            descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
+            descriptor.colorAttachments[0].loadAction = .clear
+            descriptor.colorAttachments[0].storeAction = .store
+
+            let commandBuffer = commandQueue.makeCommandBuffer()!
+            let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)!
+
+            encoder.setRenderPipelineState(pipelineState)
+
+            var uniforms = Uniforms(
+                resolution: SIMD2<Float>(Float(view.drawableSize.width), Float(view.drawableSize.height)),
+                time: Float(CFAbsoluteTimeGetCurrent() - startTime),
+                blurScale: Float(blurScale),
+                boxSize: SIMD2<Float>(Float(view.drawableSize.width), Float(view.drawableSize.height)),
+                cornerRadius: Float(cornerRadius)
+            )
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+
+            let sampler = device.makeSamplerState(descriptor: MTLSamplerDescriptor())!
+
+            let snapshotTexture = texture.currentTexture(for: mtkView!)
+            encoder.setFragmentTexture(snapshotTexture, index: 0)
+
+            encoder.setFragmentSamplerState(sampler, index: 0)
+
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+
+            encoder.endEncoding()
+            commandBuffer.present(drawable)
+            commandBuffer.commit()
+        }
+
+        func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+    }
+}
