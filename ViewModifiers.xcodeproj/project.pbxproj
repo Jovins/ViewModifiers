@@ -72,12 +72,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		6C51E45A2E600FD600991372 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		6CFAFA772DCC5FBD00CD187E = {
 			isa = PBXGroup;
 			children = (
 				6CFAFA822DCC5FBD00CD187E /* ViewModifiers */,
 				6CFAFA932DCC5FBF00CD187E /* ViewModifiersTests */,
 				6CFAFA9D2DCC5FBF00CD187E /* ViewModifiersUITests */,
+				6C51E45A2E600FD600991372 /* Frameworks */,
 				6CFAFA812DCC5FBD00CD187E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -195,6 +203,8 @@
 			);
 			mainGroup = 6CFAFA772DCC5FBD00CD187E;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6CFAFA812DCC5FBD00CD187E /* Products */;
 			projectDirPath = "";
